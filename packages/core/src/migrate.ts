@@ -2,6 +2,7 @@
  * Applies SQL migrations from ./drizzle. Run with `npm run db:migrate`.
  * The worker also calls runMigrations() on boot when RUN_MIGRATIONS=true.
  */
+import "./load-root-env";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { migrate } from "drizzle-orm/postgres-js/migrator";

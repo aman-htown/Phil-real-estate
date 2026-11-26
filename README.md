@@ -75,8 +75,10 @@ Requires Node 20.11+ and Postgres.
 npm install
 ```
 
+Fill in `env-template.txt` (each setting is explained inside) and save it as `.env` in the repo root:
+
 ```bash
-cp .env.example .env    # then fill in ANTHROPIC_API_KEY, ADMIN_PASSWORD, AUTH_SECRET
+cp env-template.txt .env
 ```
 
 ```bash
@@ -100,6 +102,8 @@ npm run dev:web
 Open http://localhost:3000, sign in with `ADMIN_PASSWORD`, go to **Status**, and use **Simulate an inbound message**. With `WHATSAPP_TRANSPORT=mock`, nothing touches WhatsApp: replies are logged by the worker and receipts are faked.
 
 ## Choosing a WhatsApp transport
+
+Step-by-step instructions for linking a live WhatsApp account, or getting an official Cloud API key, are in [WHATSAPP_SETUP.md](WHATSAPP_SETUP.md).
 
 | | `cloud`: WhatsApp Business Cloud API | `web`: WhatsApp Web (Baileys) |
 |---|---|---|

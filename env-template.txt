@@ -1,0 +1,74 @@
+# ============================================================================
+#  WhatsApp inbox: settings file
+#
+#  1. Fill in the values below (no spaces around "=", no quotes needed).
+#  2. Save this file in the Phil-real-estate folder with the name   .env
+#     (just ".env": a dot, then env, no .txt on the end).
+#     Mac/Linux terminal shortcut:   cp env-template.txt .env
+#  3. Never commit .env or share it: it holds your passwords and keys.
+#
+#  Lines starting with # are comments and are ignored.
+# ============================================================================
+
+
+# ---- REQUIRED --------------------------------------------------------------
+
+# Your Anthropic API key (console.anthropic.com → API keys). Starts with sk-ant-
+ANTHROPIC_API_KEY=
+
+# Password your team types to sign in to the inbox. Pick something strong.
+ADMIN_PASSWORD=
+
+# Any long random text (30+ characters). Signs login cookies.
+# Make one with:  openssl rand -base64 32
+AUTH_SECRET=
+
+# The database. This default matches "docker compose up -d" on your computer.
+# For a hosted database (Neon, Supabase, Render), paste its connection string here.
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/phil
+
+
+# ---- WHATSAPP CONNECTION ---------------------------------------------------
+
+# mock  = practice mode: nothing touches WhatsApp; use the simulator on the Status page
+# web   = link your real WhatsApp by scanning a QR code on the Status page
+#         (needed for groups, messages typed on your phone, and chat history)
+# cloud = official WhatsApp Business Cloud API (no groups; fill in the CLOUD section)
+WHATSAPP_TRANSPORT=mock
+
+# Port the worker listens on.
+PORT=8080
+
+# Set up / update the database tables automatically when the worker starts.
+RUN_MIGRATIONS=true
+
+
+# ---- OPTIONAL: WHATSAPP WEB (WHATSAPP_TRANSPORT=web) -------------------------
+
+# Chat history to import when you link your phone: full, recent or none
+WEB_HISTORY=full
+
+# Messages older than this many hours that arrive after the worker was down
+# are saved but not answered automatically.
+WEB_MAX_BACKLOG_HOURS=12
+
+
+# ---- OPTIONAL: CLOUD API (WHATSAPP_TRANSPORT=cloud) ------------------------
+# From developers.facebook.com → your app → WhatsApp → API Setup.
+
+WHATSAPP_ACCESS_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+# Any word you choose; type the same one as the webhook "Verify token" in Meta's dashboard.
+WHATSAPP_VERIFY_TOKEN=
+# App settings → Basic → App secret.
+WHATSAPP_APP_SECRET=
+
+
+# ---- OPTIONAL: TUNING ------------------------------------------------------
+
+# How often (milliseconds) the worker checks for work.
+POLL_INTERVAL_MS=1500
+# How many conversations Claude works on at once.
+RESPONDER_CONCURRENCY=3
+# Log detail: info, debug, warn
+LOG_LEVEL=info

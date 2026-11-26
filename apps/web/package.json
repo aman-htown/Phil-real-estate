@@ -10,7 +10,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@next/env": "^16.4.6",
     "@phil/core": "*",
     "next": "^16.4.6",
     "qrcode": "^1.5.4",

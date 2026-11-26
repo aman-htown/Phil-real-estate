@@ -7,6 +7,8 @@
  *  5. publishes a heartbeat for the web UI's Status page,
  *  6. serves /health and, for the Cloud API, the WhatsApp webhook.
  */
+// Must be first: loads the repo-root .env before config.ts reads process.env.
+import "@phil/core/load-root-env";
 import http from "node:http";
 import { sql } from "drizzle-orm";
 import {

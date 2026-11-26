@@ -13,3 +13,7 @@ coverage/
 next-env.d.ts
 # Baileys file auth (we store auth in Postgres, but just in case)
 auth_info*/
+
+# filled-in settings saved by mistake as text files
+env.txt
+.env.txt
