@@ -26,6 +26,9 @@ const Body = z
     debounceSeconds: z.number().int().min(0).max(600),
     historyLimit: z.number().int().min(4).max(200),
     timezone: z.string().refine(validTimeZone, "Unknown time zone"),
+    autoTrackNewGroups: z.boolean(),
+    groupDefaultMode: z.enum(["auto", "draft", "off"]),
+    groupReplyTarget: z.enum(["chat", "sender"]),
   })
   .partial();
 

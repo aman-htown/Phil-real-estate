@@ -15,7 +15,7 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: WHATSAPP_TRANSPORT
-        value: cloud # cloud | web | mock
+        value: web # web (needed for groups + phone messages + history) | cloud | mock
       - key: RUN_MIGRATIONS
         value: "true"
       # Cloud API only:

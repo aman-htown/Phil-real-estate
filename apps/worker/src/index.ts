@@ -15,16 +15,19 @@ import {
   failStuckSending,
   getDb,
   getSettings,
+  importHistory,
   ingestInbound,
   recordExternalOutbound,
+  upsertGroups,
   workerStatus,
+  type ChatRef,
 } from "@phil/core";
 import { config } from "./config";
 import { log } from "./log";
 import { startLoop } from "./loop";
 import { runOutboxTick } from "./pipeline/outbox";
 import { runResponderTick } from "./pipeline/responder";
-import { createTransport, type ConnectionState, type TransportHandlers } from "./transports";
+import { createTransport, type ConnectionState, type InboundEvent, type TransportHandlers } from "./transports";
 
 const VERSION = process.env.RENDER_GIT_COMMIT ?? process.env.GIT_COMMIT ?? "dev";
 
@@ -51,15 +54,57 @@ async function main() {
   };
   await publishStatus({ startedAt: new Date(), qr: null, detail: null });
 
+  const chatOf = (e: InboundEvent): ChatRef => ({
+    waId: e.waId,
+    kind: e.isGroup ? "group" : "person",
+    phone: e.phone ?? null,
+    name: e.profileName ?? null,
+  });
+
   const handlers: TransportHandlers = {
     async onMessage(event) {
-      const result = event.fromMe ? await recordExternalOutbound(db, event) : await ingestInbound(db, event);
-      if (!result.duplicate) {
+      const { waMessageId, type, body, timestamp, meta } = event;
+      const result = event.fromMe
+        ? await recordExternalOutbound(db, { chat: chatOf(event), waMessageId, type, body, timestamp, meta })
+        : await ingestInbound(db, {
+            chat: chatOf(event),
+            sender: event.sender,
+            waMessageId,
+            type,
+            body,
+            timestamp,
+            meta,
+            allowReply: event.allowReply,
+            mentionsMe: event.mentionsMe,
+          });
+      if (!result.duplicate && !result.ignored) {
         log.info(
-          { conversationId: result.conversationId, from: event.waId, type: event.type, fromMe: !!event.fromMe },
+          { conversationId: result.conversationId, chat: event.waId, group: !!event.isGroup, type, fromMe: !!event.fromMe },
           event.fromMe ? "Recorded message sent from phone" : "Inbound message",
         );
       }
+    },
+    async onGroups(groups, discovery) {
+      const settings = await getSettings(db);
+      // Groups the account was already in when it was linked are listed but not captured.
+      const trackIfNew = discovery !== "baseline" && settings.autoTrackNewGroups;
+      await upsertGroups(db, groups, { trackIfNew });
+    },
+    async onHistory(events) {
+      const result = await importHistory(
+        db,
+        events.map((e) => ({
+          chat: chatOf(e),
+          sender: e.sender,
+          fromMe: !!e.fromMe,
+          waMessageId: e.waMessageId,
+          type: e.type,
+          body: e.body,
+          timestamp: e.timestamp,
+          meta: e.meta,
+        })),
+      );
+      log.info(result, "History imported");
     },
     async onStatus(event) {
       await applyStatusUpdate(db, event);

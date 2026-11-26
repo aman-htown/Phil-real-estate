@@ -18,6 +18,8 @@ const Patch = z.object({
   /** null = follow the default mode from Settings */
   mode: z.enum(["auto", "draft", "off"]).nullable().optional(),
   status: z.enum(["open", "archived"]).optional(),
+  /** Groups: reply in the group ("chat") or privately to whoever wrote ("sender"). */
+  replyTarget: z.enum(["chat", "sender"]).optional(),
   needsAttention: z.literal(false).optional(),
   markRead: z.literal(true).optional(),
 });
@@ -32,6 +34,7 @@ export const PATCH = handler(async (req: Request, { params }: Ctx) => {
     if (body.mode === "off") set.pendingReplyAt = null;
   }
   if (body.status) set.status = body.status;
+  if (body.replyTarget) set.replyTarget = body.replyTarget;
   if (body.needsAttention === false) {
     set.needsAttention = false;
     set.attentionReason = null;

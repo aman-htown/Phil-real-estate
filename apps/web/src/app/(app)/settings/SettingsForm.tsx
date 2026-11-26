@@ -77,6 +77,36 @@ export function SettingsForm({ models, efforts }: { models: { id: string; label:
             <option value="off">Off: no AI replies</option>
           </select>
         </Field>
+        <label className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            checked={form.autoTrackNewGroups}
+            onChange={(e) => set("autoTrackNewGroups", e.target.checked)}
+            className="mt-1 size-4 accent-emerald-600"
+          />
+          <span>
+            <span className="block text-sm font-medium">Track new groups automatically</span>
+            <span className="block text-xs text-slate-600">
+              When someone adds the business to a group, start capturing it in the inbox (assistant off). Groups the
+              account was already in when WhatsApp was linked are listed on the Groups page to track by hand.
+            </span>
+          </span>
+        </label>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="New groups: assistant" help="Applied when a group starts being tracked. Each group can be changed from its header.">
+            <select className={input} value={form.groupDefaultMode} onChange={(e) => set("groupDefaultMode", e.target.value as SettingsDTO["groupDefaultMode"])}>
+              <option value="auto">Auto: Claude sends its replies</option>
+              <option value="draft">Draft: a person approves</option>
+              <option value="off">Off</option>
+            </select>
+          </Field>
+          <Field label="New groups: Claude replies" help="Private replies start a 1:1 chat with whoever wrote, about 5 seconds after their message.">
+            <select className={input} value={form.groupReplyTarget} onChange={(e) => set("groupReplyTarget", e.target.value as SettingsDTO["groupReplyTarget"])}>
+              <option value="sender">Privately, to each member who writes</option>
+              <option value="chat">In the group</option>
+            </select>
+          </Field>
+        </div>
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Wait before replying (s)" help="Lets the contact finish typing several messages.">
             <input type="number" min={0} max={600} className={input} value={form.debounceSeconds} onChange={(e) => set("debounceSeconds", Number(e.target.value))} />

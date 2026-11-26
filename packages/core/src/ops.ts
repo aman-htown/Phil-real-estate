@@ -10,16 +10,7 @@
  */
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "./client";
-import {
-  contacts,
-  conversations,
-  drafts,
-  messages,
-  type Message,
-  type MessageSource,
-  type MessageStatus,
-} from "./schema";
-import { effectiveMode, getSettings } from "./settings";
+import { conversations, drafts, messages, type Message, type MessageSource, type MessageStatus } from "./schema";
 
 export type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
 /** A database handle or an open transaction. */
@@ -30,161 +21,7 @@ export function preview(text: string, max = 140): string {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
-async function upsertContactAndConversation(
-  tx: Executor,
-  input: { waId: string; phone?: string | null; profileName?: string | null },
-  reopen: boolean,
-) {
-  const [contact] = await tx
-    .insert(contacts)
-    .values({ waId: input.waId, phone: input.phone ?? null, profileName: input.profileName ?? null })
-    .onConflictDoUpdate({
-      target: contacts.waId,
-      set: {
-        phone: sql`coalesce(excluded.phone, ${contacts.phone})`,
-        profileName: sql`coalesce(excluded.profile_name, ${contacts.profileName})`,
-      },
-    })
-    .returning();
-  if (!contact) throw new Error("contact upsert failed");
-
-  const [conversation] = await tx
-    .insert(conversations)
-    .values({ contactId: contact.id })
-    .onConflictDoUpdate({
-      target: conversations.contactId,
-      // A new inbound message re-opens an archived conversation.
-      set: reopen ? { status: "open" } : { contactId: sql`excluded.contact_id` },
-    })
-    .returning();
-  if (!conversation) throw new Error("conversation upsert failed");
-  return { contact, conversation };
-}
-
-export interface InboundInput {
-  waId: string;
-  phone?: string | null;
-  profileName?: string | null;
-  waMessageId: string;
-  type: string;
-  body: string;
-  timestamp: Date;
-  meta?: Record<string, unknown>;
-}
-
-export interface IngestResult {
-  duplicate: boolean;
-  conversationId: string;
-  messageId?: string;
-}
-
-/**
- * Stores a message from a contact and schedules a reply.
- * Idempotent on `waMessageId`, so webhook redeliveries are harmless.
- */
-export async function ingestInbound(db: Database, input: InboundInput): Promise<IngestResult> {
-  const settings = await getSettings(db);
-  return db.transaction(async (tx) => {
-    const { conversation } = await upsertContactAndConversation(tx, input, true);
-
-    const [message] = await tx
-      .insert(messages)
-      .values({
-        conversationId: conversation.id,
-        direction: "inbound",
-        source: "contact",
-        status: "received",
-        type: input.type,
-        body: input.body,
-        meta: input.meta ?? null,
-        waMessageId: input.waMessageId,
-        createdAt: input.timestamp,
-        sentAt: input.timestamp,
-      })
-      .onConflictDoNothing({ target: messages.waMessageId })
-      .returning();
-    if (!message) return { duplicate: true, conversationId: conversation.id };
-
-    const mode = effectiveMode(conversation, settings);
-    const replyAt = new Date(Date.now() + settings.debounceSeconds * 1000);
-    await tx
-      .update(conversations)
-      .set({
-        lastMessageAt: sql`greatest(${conversations.lastMessageAt}, ${input.timestamp.toISOString()}::timestamptz)`,
-        lastMessagePreview: preview(input.body || `[${input.type}]`),
-        lastInboundAt: sql`greatest(${conversations.lastInboundAt}, ${input.timestamp.toISOString()}::timestamptz)`,
-        unreadCount: sql`${conversations.unreadCount} + 1`,
-        // Debounce: every new message pushes the reply back. Emoji reactions don't need a reply.
-        ...(mode === "off" || input.type === "reaction" ? {} : { pendingReplyAt: replyAt }),
-      })
-      .where(eq(conversations.id, conversation.id));
-
-    return { duplicate: false, conversationId: conversation.id, messageId: message.id };
-  });
-}
-
-export interface ExternalOutboundInput {
-  waId: string;
-  phone?: string | null;
-  waMessageId: string;
-  type: string;
-  body: string;
-  timestamp: Date;
-  meta?: Record<string, unknown>;
-}
-
-/**
- * Records a message the business account sent from outside this system (e.g.
- * Phil typing on his phone while the worker is linked via WhatsApp Web).
- * A human has replied, so any pending AI reply is cancelled.
- */
-export async function recordExternalOutbound(
-  db: Database,
-  input: ExternalOutboundInput,
-): Promise<IngestResult> {
-  return db.transaction(async (tx) => {
-    // Our own sends echo back too; skip anything we already know about.
-    const existing = await tx
-      .select({ id: messages.id, conversationId: messages.conversationId })
-      .from(messages)
-      .where(eq(messages.waMessageId, input.waMessageId));
-    if (existing[0]) return { duplicate: true, conversationId: existing[0].conversationId };
-
-    const { conversation } = await upsertContactAndConversation(tx, input, false);
-    const [message] = await tx
-      .insert(messages)
-      .values({
-        conversationId: conversation.id,
-        direction: "outbound",
-        source: "external",
-        status: "sent",
-        type: input.type,
-        body: input.body,
-        meta: input.meta ?? null,
-        waMessageId: input.waMessageId,
-        createdAt: input.timestamp,
-        sentAt: input.timestamp,
-      })
-      .onConflictDoNothing({ target: messages.waMessageId })
-      .returning();
-    if (!message) return { duplicate: true, conversationId: conversation.id };
-
-    await tx
-      .update(conversations)
-      .set({
-        lastMessageAt: sql`greatest(${conversations.lastMessageAt}, ${input.timestamp.toISOString()}::timestamptz)`,
-        lastMessagePreview: preview(input.body || `[${input.type}]`),
-        pendingReplyAt: null,
-        pendingReplyManual: false,
-        unreadCount: 0,
-      })
-      .where(eq(conversations.id, conversation.id));
-    await supersedePendingDrafts(tx, conversation.id);
-    return { duplicate: false, conversationId: conversation.id, messageId: message.id };
-  });
-}
-
-async function supersedePendingDrafts(tx: Executor, conversationId: string, exceptId?: string) {
+export async function supersedePendingDrafts(tx: Executor, conversationId: string, exceptId?: string) {
   await tx
     .update(drafts)
     .set({ status: "superseded" })
@@ -231,7 +68,7 @@ export async function queueOutbound(db: Executor, input: QueueOutboundInput): Pr
       lastMessagePreview: preview(body),
       unreadCount: 0,
       // Someone replied; no need for the AI to reply again until the contact writes back.
-      ...(input.source === "human" ? { pendingReplyAt: null, pendingReplyManual: false } : {}),
+      ...(input.source === "human" ? { pendingReplyAt: null, pendingReplyManual: false, pendingContextId: null } : {}),
     })
     .where(eq(conversations.id, input.conversationId));
   if (input.source === "human") await supersedePendingDrafts(db, input.conversationId);
@@ -347,12 +184,12 @@ export async function applyStatusUpdate(
 export async function claimDueConversations(
   db: Database,
   limit = 5,
-): Promise<Array<{ id: string; manual: boolean }>> {
-  const rows = await db.execute<{ id: string; manual: boolean }>(sql`
+): Promise<Array<{ id: string; manual: boolean; contextId: string | null }>> {
+  const rows = await db.execute<{ id: string; manual: boolean; contextId: string | null }>(sql`
     UPDATE conversations c
-       SET pending_reply_at = NULL, pending_reply_manual = false, reply_generating_at = now()
+       SET pending_reply_at = NULL, pending_reply_manual = false, pending_context_id = NULL, reply_generating_at = now()
       FROM (
-        SELECT id, pending_reply_manual
+        SELECT id, pending_reply_manual, pending_context_id
           FROM conversations
          WHERE pending_reply_at IS NOT NULL AND pending_reply_at <= now()
          ORDER BY pending_reply_at
@@ -360,7 +197,7 @@ export async function claimDueConversations(
          FOR UPDATE SKIP LOCKED
       ) due
      WHERE c.id = due.id
-    RETURNING c.id AS id, due.pending_reply_manual AS manual
+    RETURNING c.id AS id, due.pending_reply_manual AS manual, due.pending_context_id AS "contextId"
   `);
   return Array.from(rows);
 }

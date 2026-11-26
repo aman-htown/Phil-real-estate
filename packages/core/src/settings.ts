@@ -36,6 +36,9 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, "updatedAt"> = {
   debounceSeconds: 20,
   historyLimit: 40,
   timezone: "UTC",
+  autoTrackNewGroups: true,
+  groupDefaultMode: "auto",
+  groupReplyTarget: "sender",
 };
 
 /** Loads the settings row, creating it with defaults on first use. */

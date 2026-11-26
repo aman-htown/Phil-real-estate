@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { api, clockTime, dayLabel, fetcher } from "@/lib/client";
@@ -14,9 +15,11 @@ import {
   IconChecks,
   IconChevronLeft,
   IconClock,
+  IconMessage,
   IconSend,
   IconSparkles,
   IconUser,
+  IconUsers,
 } from "./icons";
 
 type Msg = ConversationDetail["messages"][number];
@@ -79,7 +82,44 @@ function StatusIcon({ m }: { m: Msg }) {
   }
 }
 
-function MessageBubble({ m, onRetry }: { m: Msg; onRetry: (id: string) => void }) {
+const SENDER_COLORS = ["text-sky-700", "text-violet-700", "text-amber-700", "text-rose-700", "text-teal-700", "text-indigo-700"];
+function senderColor(key: string) {
+  let h = 0;
+  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return SENDER_COLORS[h % SENDER_COLORS.length];
+}
+
+function SenderLine({ m, onMessagePrivately }: { m: Msg; onMessagePrivately: (contactId: string) => void }) {
+  const name = m.sender?.displayName || m.sender?.profileName || m.senderName || "Member";
+  const phone = m.sender?.phone ? `+${m.sender.phone}` : null;
+  return (
+    <div className="mb-0.5 flex items-center gap-2 text-xs">
+      <span className={`font-semibold ${senderColor(m.sender?.id ?? name)}`}>{name}</span>
+      {phone && phone !== name && <span className="text-slate-400">{phone}</span>}
+      {m.sender?.id && (
+        <button
+          onClick={() => onMessagePrivately(m.sender!.id)}
+          className="ml-auto flex items-center gap-1 rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-brand-700"
+          title={`Message ${name} privately`}
+        >
+          <IconMessage width={12} height={12} /> Message privately
+        </button>
+      )}
+    </div>
+  );
+}
+
+function MessageBubble({
+  m,
+  isGroup,
+  onRetry,
+  onMessagePrivately,
+}: {
+  m: Msg;
+  isGroup: boolean;
+  onRetry: (id: string) => void;
+  onMessagePrivately: (contactId: string) => void;
+}) {
   const out = m.direction === "outbound";
   const label = out ? sourceLabel(m) : null;
   return (
@@ -93,6 +133,7 @@ function MessageBubble({ m, onRetry }: { m: Msg; onRetry: (id: string) => void }
             : "rounded-bl-md bg-white"
         }`}
       >
+        {isGroup && !out && <SenderLine m={m} onMessagePrivately={onMessagePrivately} />}
         {m.type !== "text" && (
           <div className="mb-0.5 text-xs font-medium text-slate-500">[{TYPE_LABEL[m.type] ?? m.type}]</div>
         )}
@@ -119,6 +160,7 @@ export function ConversationView({ id }: { id: string }) {
   const key = `/api/conversations/${id}`;
   const { data, error, mutate } = useSWR<ConversationDetail>(key, fetcher, { refreshInterval: 2500 });
   const { mutate: globalMutate } = useSWRConfig();
+  const router = useRouter();
   const [showContact, setShowContact] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -177,6 +219,12 @@ export function ConversationView({ id }: { id: string }) {
   if (!data) return <div className="p-6 text-sm text-slate-400">Loading…</div>;
 
   const { conversation, contact, messages } = data;
+  const isGroup = contact.kind === "group";
+  const messagePrivately = (contactId: string) =>
+    run(async () => {
+      const { id: target } = await api<{ id: string }>("POST", "/api/conversations", { contactId });
+      router.push(`/inbox/${target}`);
+    });
   const lastInbound = conversation.lastInboundAt ? new Date(conversation.lastInboundAt).getTime() : null;
   const outsideWindow = data.transport === "cloud" && (!lastInbound || Date.now() - lastInbound > 24 * 3600_000);
 
@@ -188,16 +236,39 @@ export function ConversationView({ id }: { id: string }) {
           <Link href="/inbox" className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 md:hidden" aria-label="Back">
             <IconChevronLeft />
           </Link>
-          <button className="min-w-0 text-left" onClick={() => setShowContact((s) => !s)}>
-            <div className="truncate font-semibold">{contactLabel(contact)}</div>
-            <div className="truncate text-xs text-slate-500">
-              {contact.phone ? `+${contact.phone}` : contact.waId}
-              {conversation.intent ? ` · ${conversation.intent}` : ""}
-            </div>
+          <button className="flex min-w-0 items-center gap-2 text-left" onClick={() => setShowContact((s) => !s)}>
+            {isGroup && (
+              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-sky-100 text-sky-700">
+                <IconUsers />
+              </span>
+            )}
+            <span className="min-w-0">
+              <span className="block truncate font-semibold">{contactLabel(contact)}</span>
+              <span className="block truncate text-xs text-slate-500">
+                {isGroup
+                  ? `Group · ${data.participants.length} other member${data.participants.length === 1 ? "" : "s"}`
+                  : contact.phone
+                    ? `+${contact.phone}`
+                    : contact.waId}
+                {conversation.intent ? ` · ${conversation.intent}` : ""}
+              </span>
+            </span>
           </button>
           <div className="ml-auto flex items-center gap-2">
+            {isGroup && (
+              <select
+                value={conversation.replyTarget}
+                onChange={(e) => run(() => api("PATCH", key, { replyTarget: e.target.value }))}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                title="Where Claude's replies to this group's messages go"
+                aria-label="Where Claude replies"
+              >
+                <option value="sender">Claude replies privately to each sender</option>
+                <option value="chat">Claude replies in the group</option>
+              </select>
+            )}
             <div className="flex rounded-lg bg-slate-100 p-0.5 text-xs" role="radiogroup" aria-label="Assistant mode">
-              {MODES.map((m) => {
+              {MODES.filter((m) => !(isGroup && m.id === null)).map((m) => {
                 const active = conversation.mode === m.id;
                 const title = m.id ? MODE_HELP[m.id] : `Use the default from Settings (${data.defaultMode})`;
                 return (
@@ -266,7 +337,12 @@ export function ConversationView({ id }: { id: string }) {
                     </span>
                   </div>
                 )}
-                <MessageBubble m={m} onRetry={(mid) => run(() => api("POST", `/api/messages/${mid}/retry`))} />
+                <MessageBubble
+                  m={m}
+                  isGroup={isGroup}
+                  onRetry={(mid) => run(() => api("POST", `/api/messages/${mid}/retry`))}
+                  onMessagePrivately={messagePrivately}
+                />
               </div>
             );
           })}
@@ -290,6 +366,7 @@ export function ConversationView({ id }: { id: string }) {
             </p>
           )}
           <Composer
+            placeholder={isGroup ? `Message the group “${contactLabel(contact)}”…` : undefined}
             onSend={(body) => run(() => api("POST", `${key}/messages`, { body }))}
             onDraft={() => run(() => api("POST", `${key}/reply-request`))}
             generating={data.generating}
@@ -306,10 +383,12 @@ function Composer({
   onSend,
   onDraft,
   generating,
+  placeholder,
 }: {
   onSend: (body: string) => Promise<void>;
   onDraft: () => Promise<void>;
   generating: boolean;
+  placeholder?: string;
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -344,7 +423,7 @@ function Composer({
           }
         }}
         rows={Math.min(6, Math.max(1, text.split("\n").length))}
-        placeholder="Type a message…"
+        placeholder={placeholder ?? "Type a message…"}
         title="Enter to send, Shift+Enter for a new line"
         className="min-h-10 flex-1 resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
       />

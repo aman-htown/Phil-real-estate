@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import {
   contacts,
   conversations,
@@ -10,9 +10,9 @@ import {
   workerStatus,
   type Database,
 } from "@phil/core";
-import type { ConversationDetail, ConversationListItem, Jsonify } from "./types";
+import type { ConversationDetail, ConversationListItem, Jsonify, ParticipantDTO, SharedGroupDTO } from "./types";
 
-export const LIST_FILTERS = ["open", "attention", "drafts", "archived", "all"] as const;
+export const LIST_FILTERS = ["open", "attention", "drafts", "people", "groups", "archived", "all"] as const;
 export type ListFilter = (typeof LIST_FILTERS)[number];
 
 function isGenerating(conv: { pendingReplyAt: Date | null; replyGeneratingAt: Date | null }) {
@@ -31,6 +31,8 @@ export async function listConversations(db: Database, filter: ListFilter, q: str
   if (filter === "archived") where.push(eq(conversations.status, "archived"));
   if (filter === "attention") where.push(eq(conversations.needsAttention, true));
   if (filter === "drafts") where.push(pendingDraft);
+  if (filter === "people") where.push(eq(contacts.kind, "person"), eq(conversations.status, "open"));
+  if (filter === "groups") where.push(eq(contacts.kind, "group"), eq(conversations.status, "open"));
   const term = q.trim();
   if (term) {
     const like = `%${term.replace(/[%_\\]/g, (m) => `\\${m}`)}%`;
@@ -68,6 +70,7 @@ export async function listConversations(db: Database, filter: ListFilter, q: str
     generating: isGenerating(c),
     contact: {
       id: contact.id,
+      kind: contact.kind,
       waId: contact.waId,
       phone: contact.phone,
       displayName: contact.displayName,
@@ -86,8 +89,12 @@ export async function getConversationDetail(db: Database, id: string): Promise<C
   if (!row) return null;
 
   const recent = await db
-    .select()
+    .select({
+      message: messages,
+      sender: { id: contacts.id, displayName: contacts.displayName, profileName: contacts.profileName, phone: contacts.phone },
+    })
     .from(messages)
+    .leftJoin(contacts, eq(contacts.id, messages.senderContactId))
     .where(eq(messages.conversationId, id))
     .orderBy(desc(messages.createdAt))
     .limit(300);
@@ -97,12 +104,68 @@ export async function getConversationDetail(db: Database, id: string): Promise<C
     .where(eq(drafts.conversationId, id))
     .orderBy(desc(drafts.createdAt))
     .limit(1);
-  const [worker] = await db.select({ transport: workerStatus.transport }).from(workerStatus).orderBy(asc(workerStatus.id)).limit(1);
+  const [worker] = await db
+    .select({ transport: workerStatus.transport, account: workerStatus.account })
+    .from(workerStatus)
+    .orderBy(asc(workerStatus.id))
+    .limit(1);
+
+  // Groups: members, linked to their contacts / private chats. People: the tracked groups they're in.
+  let participants: ParticipantDTO[] = [];
+  let groups: SharedGroupDTO[] = [];
+  if (row.contact.kind === "group") {
+    const members = (row.contact.participants ?? []).filter((p) => p.waId !== worker?.account);
+    const known = members.length
+      ? await db
+          .select({ id: contacts.id, waId: contacts.waId, displayName: contacts.displayName, profileName: contacts.profileName, conversationId: conversations.id })
+          .from(contacts)
+          .leftJoin(conversations, eq(conversations.contactId, contacts.id))
+          .where(inArray(contacts.waId, members.map((p) => p.waId)))
+      : [];
+    const byWa = new Map(known.map((k) => [k.waId, k]));
+    participants = members.map((p) => {
+      const c = byWa.get(p.waId);
+      return {
+        waId: p.waId,
+        phone: p.phone ?? null,
+        name: c?.displayName || c?.profileName || p.name || null,
+        admin: Boolean(p.admin),
+        contactId: c?.id ?? null,
+        conversationId: c?.conversationId ?? null,
+      };
+    });
+  } else {
+    groups = await db
+      .select({ contactId: contacts.id, name: sql<string | null>`coalesce(${contacts.displayName}, ${contacts.profileName})`, conversationId: conversations.id })
+      .from(contacts)
+      .leftJoin(conversations, eq(conversations.contactId, contacts.id))
+      .where(
+        and(
+          eq(contacts.kind, "group"),
+          eq(contacts.tracked, true),
+          sql`${contacts.participants} @> ${JSON.stringify([{ waId: row.contact.waId }])}::jsonb`,
+        ),
+      )
+      .limit(50);
+  }
+
+  let draftContext: { conversationId: string; name: string | null } | null = null;
+  if (latestDraft?.contextConversationId) {
+    const [ctx] = await db
+      .select({ conversationId: conversations.id, name: sql<string | null>`coalesce(${contacts.displayName}, ${contacts.profileName})` })
+      .from(conversations)
+      .innerJoin(contacts, eq(contacts.id, conversations.contactId))
+      .where(eq(conversations.id, latestDraft.contextConversationId));
+    draftContext = ctx ?? null;
+  }
 
   const detail = {
     conversation: row.conversation,
     contact: row.contact,
-    messages: recent.reverse(),
+    messages: recent.reverse().map((r) => ({ ...r.message, sender: r.sender?.id ? r.sender : null })),
+    participants,
+    groups,
+    draftContext,
     latestDraft: latestDraft ?? null,
     effectiveMode: effectiveMode(row.conversation, settings),
     defaultMode: settings.defaultMode,

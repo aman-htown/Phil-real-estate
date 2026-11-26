@@ -39,6 +39,22 @@ Safety rails:
 - If someone replies from the phone (WhatsApp Web transport), the pending AI reply is cancelled.
 - Claude errors and policy refusals become visible error drafts and flag the conversation. Refusals first retry on Anthropic's fallback model (`fallbacks: "default"`).
 
+## Groups and private replies
+
+With the WhatsApp Web transport, every group the account is in is listed on the **Groups** page.
+
+- **Tracking.** Groups the account joins after linking are tracked automatically (Settings). Groups it was already in start untracked, so family chats don't flow in. Messages from untracked groups are never stored.
+- **Private replies (default for new groups).** When a member writes in a tracked group, Claude opens a 1:1 chat with that member and replies there, about 5 seconds later, with the group's recent messages as context. It only follows up when the message warrants it (a question, interest, a request), and it won't re-message someone it already answered. Each group's header switches between "privately to each sender" and "in the group", and Auto / Draft / Off.
+- **Reading and replying.** Group messages show who wrote them. Reply to the group from the composer, or click **Message privately** on any message or member.
+- **@mentions** of the business flag the group for attention.
+
+## The complete record
+
+- Messages typed on the phone are recorded, and they cancel any pending AI reply.
+- Chat history is imported when the phone is linked (`WEB_HISTORY=full|recent|none`). It's stored for the record and never replied to.
+- Messages that arrive after downtime are stored, but not answered if they're older than `WEB_MAX_BACKLOG_HOURS`.
+- **Not a customer.** For a personal chat, use the contact panel's stop-tracking action. It deletes that chat's stored messages and ignores new ones. Restore it from the Groups page.
+
 ## Repository layout
 
 ```
@@ -94,7 +110,7 @@ Open http://localhost:3000, sign in with `ADMIN_PASSWORD`, go to **Status**, and
 | 24-hour rule | Free-form replies only within 24h of the contact's last message (the UI warns) | No template rule |
 | Needs a public URL | Yes (webhook) | No |
 
-Use **cloud** for a dedicated business line. Use **web** when you need the assistant on an inbox a person also uses from their phone, and accept the risk.
+Use **web** for groups, phone-typed messages, and history. The Cloud API can't read groups created by other people. Use **cloud** only for a dedicated business line that needs none of those.
 
 **Cloud API setup:** in developers.facebook.com, create an app with the WhatsApp product. Note the *Phone number ID* and create a permanent access token (System User). Under *Configuration*, set the callback URL to `https://<worker-host>/webhooks/whatsapp`, set the verify token to your `WHATSAPP_VERIFY_TOKEN`, and subscribe to **messages**. Set `WHATSAPP_APP_SECRET` so webhook signatures are verified.
 

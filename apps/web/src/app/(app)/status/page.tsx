@@ -98,6 +98,8 @@ function Simulator({ transport }: { transport?: string }) {
   const [phone, setPhone] = useState("15550001234");
   const [name, setName] = useState("Test Buyer");
   const [body, setBody] = useState("Hi! Is the 3-bed on Elm Street still available? Could I see it this weekend?");
+  const [group, setGroup] = useState("");
+  const [mentionsMe, setMentionsMe] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string; href?: string } | null>(null);
 
   return (
@@ -115,14 +117,32 @@ function Simulator({ transport }: { transport?: string }) {
         <input className={input} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone (digits)" />
         <input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
       </div>
+      <div className="grid items-center gap-3 sm:grid-cols-2">
+        <input className={input} value={group} onChange={(e) => setGroup(e.target.value)} placeholder="Group name (optional: posts in a group)" />
+        {group.trim() && (
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <input type="checkbox" className="accent-emerald-600" checked={mentionsMe} onChange={(e) => setMentionsMe(e.target.checked)} />
+            @mentions the business
+          </label>
+        )}
+      </div>
       <textarea className={input} rows={3} value={body} onChange={(e) => setBody(e.target.value)} />
       <div className="flex items-center gap-3">
         <button
           onClick={async () => {
             setResult(null);
             try {
-              const r = await api<{ conversationId: string }>("POST", "/api/simulate", { phone, name, body });
-              setResult({ ok: true, text: "Message received.", href: `/inbox/${r.conversationId}` });
+              const r = await api<{ conversationId?: string; ignored?: boolean }>("POST", "/api/simulate", {
+                phone,
+                name,
+                body,
+                ...(group.trim() ? { group: group.trim(), mentionsMe } : {}),
+              });
+              setResult(
+                r.ignored
+                  ? { ok: false, text: "That chat isn't tracked, so the message was ignored. Track it on the Groups page." }
+                  : { ok: true, text: "Message received.", href: `/inbox/${r.conversationId}` },
+              );
             } catch (err) {
               setResult({ ok: false, text: err instanceof Error ? err.message : "Failed" });
             }

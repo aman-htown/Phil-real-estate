@@ -1,10 +1,15 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { GroupInfo, SenderRef } from "@phil/core";
 
 export interface InboundEvent {
-  /** Contact address for sending replies (phone digits for Cloud API, JID for WhatsApp Web). */
+  /** Chat address used for replies: the person (phone digits for Cloud API, JID for WhatsApp Web) or the group JID. */
   waId: string;
+  isGroup?: boolean;
   phone?: string | null;
+  /** Person: their WhatsApp name. Group: the group subject. */
   profileName?: string | null;
+  /** Group messages: the member who wrote it. */
+  sender?: SenderRef;
   waMessageId: string;
   type: string;
   body: string;
@@ -14,6 +19,10 @@ export interface InboundEvent {
    * device (e.g. the phone). Recorded as an outbound "external" message.
    */
   fromMe?: boolean;
+  /** Group messages: the business account was @mentioned. */
+  mentionsMe?: boolean;
+  /** false = store without replying (e.g. a message from days ago delivered after downtime). */
+  allowReply?: boolean;
   meta?: Record<string, unknown>;
 }
 
@@ -25,10 +34,23 @@ export interface StatusEvent {
 
 export type ConnectionState = "starting" | "connecting" | "qr" | "connected" | "disconnected" | "error";
 
+/**
+ * How a batch of groups was discovered, which decides whether never-seen
+ * groups get tracked automatically:
+ *  - baseline: the groups the account was already in when it was linked (never auto-tracked)
+ *  - sync:     reconnect; anything unseen was joined while the worker was offline
+ *  - live:     the account was just added to the group
+ */
+export type GroupDiscovery = "baseline" | "sync" | "live";
+
 export interface TransportHandlers {
   onMessage(event: InboundEvent): Promise<void>;
   onStatus(event: StatusEvent): Promise<void>;
   onState(state: ConnectionState, info?: { detail?: string; qr?: string | null; account?: string | null }): Promise<void>;
+  /** Group list / metadata changes (WhatsApp Web only). */
+  onGroups?(groups: GroupInfo[], discovery: GroupDiscovery): Promise<void>;
+  /** Past messages delivered when WhatsApp is linked (WhatsApp Web only). Stored, never replied to. */
+  onHistory?(events: InboundEvent[]): Promise<void>;
 }
 
 export interface SendTarget {

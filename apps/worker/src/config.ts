@@ -40,7 +40,17 @@ export const config = {
     graphVersion: env("WHATSAPP_GRAPH_VERSION", "v24.0")!,
   },
   web: {
-    /** Ignore WhatsApp Web messages older than this on reconnect (avoids replying to stale backlog). */
+    /**
+     * Messages older than this that arrive after downtime are stored but not
+     * answered, so contacts don't get a reply to something from days ago.
+     */
     maxBacklogHours: Number(env("WEB_MAX_BACKLOG_HOURS", "12")),
+    /**
+     * Chat history to import when the phone is linked:
+     *   full   = everything the phone shares (can be large)
+     *   recent = the last few months
+     *   none   = only messages from now on
+     */
+    history: (env("WEB_HISTORY", "full") as "full" | "recent" | "none"),
   },
 };

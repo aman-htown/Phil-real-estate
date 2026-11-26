@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { api } from "@/lib/client";
-import { IconActivity, IconBook, IconInbox, IconSettings } from "./icons";
+import { IconActivity, IconBook, IconInbox, IconSettings, IconUsers } from "./icons";
 import { StatusPill } from "./StatusPill";
 
 const LINKS = [
   { href: "/inbox", label: "Inbox", Icon: IconInbox },
+  { href: "/groups", label: "Groups", Icon: IconUsers },
   { href: "/knowledge", label: "Knowledge", Icon: IconBook },
   { href: "/settings", label: "Settings", Icon: IconSettings },
   { href: "/status", label: "Status", Icon: IconActivity },

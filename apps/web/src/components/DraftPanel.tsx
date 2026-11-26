@@ -1,9 +1,20 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
 import type { ConversationDetail } from "@/lib/types";
-import { IconRefresh, IconSend, IconSparkles, IconTrash } from "./icons";
+import { IconRefresh, IconSend, IconSparkles, IconTrash, IconUsers } from "./icons";
+
+function GroupOrigin({ detail }: { detail: ConversationDetail }) {
+  const ctx = detail.draftContext;
+  if (!ctx) return null;
+  return (
+    <Link href={`/inbox/${ctx.conversationId}`} className="flex items-center gap-1 text-sky-700 hover:underline">
+      <IconUsers width={12} height={12} /> Re: their message in {ctx.name ?? "a group"}
+    </Link>
+  );
+}
 
 const ACTION_LABEL: Record<string, { label: string; cls: string }> = {
   reply: { label: "Suggested reply", cls: "bg-violet-100 text-violet-700" },
@@ -40,9 +51,12 @@ export function DraftPanel({
     return (
       <div className="flex items-start gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2 text-sm text-slate-600">
         <IconSparkles className="mt-0.5 shrink-0 text-slate-400" />
-        <p className="flex-1">
-          <span className="font-medium">Claude suggests no reply.</span> {draft.operatorNote}
-        </p>
+        <div className="flex-1 space-y-0.5">
+          <p>
+            <span className="font-medium">Claude suggests no reply.</span> {draft.operatorNote}
+          </p>
+          <GroupOrigin detail={detail} />
+        </div>
         <button className="shrink-0 text-violet-700 underline" onClick={() => run(() => api("POST", `${convKey}/reply-request`))}>
           Draft anyway
         </button>
@@ -112,6 +126,7 @@ function PendingDraft({
         </span>
         {draft.urgency === "high" && <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-700">Urgent</span>}
         {edited && <span className="text-slate-500">Edited</span>}
+        <GroupOrigin detail={detail} />
         {detail.generating && <span className="animate-pulse text-violet-600">Re-drafting…</span>}
         <span className="ml-auto text-slate-400" title={`${draft.inputTokens ?? 0} in / ${draft.outputTokens ?? 0} out tokens`}>
           {draft.model}
