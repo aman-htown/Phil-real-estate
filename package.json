@@ -1,0 +1,21 @@
+{
+  "name": "phil-real-estate",
+  "private": true,
+  "description": "WhatsApp inbox assistant: an always-on worker that answers WhatsApp messages with Claude, plus a web inbox to review, edit and send replies.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "dev:web": "npm run dev -w @phil/web",
+    "dev:worker": "npm run dev -w @phil/worker",
+    "build:web": "npm run build -w @phil/web",
+    "start:worker": "npm run start -w @phil/worker",
+    "db:generate": "npm run db:generate -w @phil/core",
+    "db:migrate": "npm run db:migrate -w @phil/core",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}

@@ -1,0 +1,29 @@
+# Render Blueprint for the always-on worker (render.com → New → Blueprint).
+# The web UI deploys separately to Vercel; both point at the same Postgres.
+services:
+  - type: web # "web" (not "worker") so Meta can reach the Cloud API webhook at /webhooks/whatsapp
+    name: whatsapp-worker
+    runtime: docker
+    dockerfilePath: ./apps/worker/Dockerfile
+    dockerContext: .
+    plan: starter # paid plans don't sleep; a sleeping worker misses messages
+    healthCheckPath: /health
+    numInstances: 1 # exactly one: WhatsApp Web allows one linked session per worker
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: WHATSAPP_TRANSPORT
+        value: cloud # cloud | web | mock
+      - key: RUN_MIGRATIONS
+        value: "true"
+      # Cloud API only:
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        generateValue: true
+      - key: WHATSAPP_APP_SECRET
+        sync: false

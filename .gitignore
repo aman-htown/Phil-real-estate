@@ -1,0 +1,15 @@
+node_modules/
+.next/
+dist/
+out/
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+.vercel/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+# Baileys file auth (we store auth in Postgres, but just in case)
+auth_info*/
